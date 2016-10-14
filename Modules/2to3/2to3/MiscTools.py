@@ -32,7 +32,7 @@ intends the log to work on this method. For that behaviour, use the keyword arg:
         method_name = func.__name__
         args_dict_string = '\nMETHOD: ' + method_name + '\n'
 
-        for k,v in args_dict.items():
+        for k,v in list(args_dict.items()):
             if type(v) is not np.ndarray:
                 args_dict_string += "%s: %s\n" %(k,v)
 

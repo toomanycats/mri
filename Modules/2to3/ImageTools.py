@@ -14,7 +14,6 @@ from MiscTools import MiscTools
 from os import path, remove, rename
 from shutil import copyfile, rmtree, move, copytree
 import tempfile
-import StaticPaths
 import traceback
 import dicom
 import re
@@ -886,6 +885,26 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
         if gzip_bool:
             self.gzip(infile)
         remove(tmp_out)
+
+    def convert_dcm_to_nii_basic(self, input_dir, output, tol='default', catch_errors=True):
+
+        example_dicom = self.glob_for_files(input_dir, "*", orig_num_frames=1)
+        desc = self.get_series_description(example_dicom)
+        log.debug("converting dicoms with series desc:%s" % desc)
+
+        if tol == 'default':
+            tolerance = '--tolerance 5.5e-05'
+
+        elif tol != 'default':
+            tolerance = '--tolerance %f' % float(tol)
+
+        cmd = 'dcm2image -rv %(tolerance)s -O "%(output)s" "%(input_dir)s"'
+        cmd = cmd % {'output': output,
+                     'input_dir': input_dir,
+                     'tolerance': tolerance
+                    }
+
+        self.call_shell_program(cmd, catch_errors)
 
     @log_method
     def convert_dcm_to_nii(self, input_dir, output_pattern='%D_%n.nii.gz', tol='default'):

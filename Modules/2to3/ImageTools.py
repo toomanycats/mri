@@ -886,9 +886,9 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
             self.gzip(infile)
         remove(tmp_out)
 
-    def convert_dcm_to_nii_basic(self, input_dir, output, tol='default', catch_errors=True):
+    def convert_dcm_to_nii_basic(self, input_dir, output, tol='default'):
 
-        example_dicom = self.glob_for_files(input_dir, "*", orig_num_frames=1)
+        example_dicom = self.glob_for_files(input_dir, "*", num_limit=1e3)[0]
         desc = self.get_series_description(example_dicom)
         log.debug("converting dicoms with series desc:%s" % desc)
 
@@ -904,7 +904,7 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
                      'tolerance': tolerance
                     }
 
-        self.call_shell_program(cmd, catch_errors)
+        self.call_shell_program(cmd)
 
     @log_method
     def convert_dcm_to_nii(self, input_dir, output_pattern='%D_%n.nii.gz', tol='default'):
@@ -1142,7 +1142,13 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
 
         return plan
 
+    def convert_nii_to_mgh(self, infile, outfile):
+        cmd = "mri_convert -i %(infile)s -o %(outfile)s"
+        cmd = cmd % {'infile': infile,
+                     'outfile': outfile
+                     }
 
+        self.call_shell_program(cmd)
 
 
 

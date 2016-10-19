@@ -63,7 +63,7 @@ class MiscTools(object):
             #raise Exception, "No files founds with pattern: %s" %pattern
         elif len(files) > num_limit:
             raise Exception("The number of files found were greater than the limit set: %i" %num_limit)
-        elif len(files) == 1 and num_limit ==1:
+        elif len(files) == 1 and num_limit == 1:
             return files[0]
 
         log.debug("File found with pattern: %s  In root dir: %s" %(pattern, root_dir))
@@ -76,7 +76,7 @@ class MiscTools(object):
             return self.flatten(list_ob[0]) + self.flatten(list_ob[1:])
         return list_ob[:1] + self.flatten(list_ob[1:])
 
-    def call_shell_program(self, cmd, catch_errors=True, catch_warnings=True):
+    def call_shell_program(self, cmd):
         log.debug('command line used: %s' %cmd)
 
         process = subprocess.Popen(cmd, shell=True,
@@ -91,20 +91,8 @@ class MiscTools(object):
 
         log.debug('Shell call output: %s' %out)
 
-        warn_ob = re.compile('.*warn.*', flags=re.IGNORECASE | re.DOTALL)
-        error_ob = re.compile('.*error.*', flags=re.I | re.DOTALL)
-        stop_ob = re.compile('.*STOPPING PROGRAM.*', flags=re.I)
-
         if err or errcode:
             log.debug('Shell call error mess: %s' %err)
-
-        if catch_errors and (errcode or error_ob.match(err)):
-            print(err)
-            raise Exception("%s %s" %(err, errcode))
-
-        elif catch_warnings  and  ( warn_ob.match(err) or stop_ob.match(err) or error_ob.match(err) ):
-            print(err)
-            raise Exception("%s %s" %(err, errcode))
 
         return out
 

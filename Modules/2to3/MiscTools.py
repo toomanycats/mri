@@ -76,7 +76,7 @@ class MiscTools(object):
             return self.flatten(list_ob[0]) + self.flatten(list_ob[1:])
         return list_ob[:1] + self.flatten(list_ob[1:])
 
-    def call_shell_program(self, cmd):
+    def call_shell_program(self, cmd, error=False):
         log.debug('command line used: %s' %cmd)
 
         process = subprocess.Popen(cmd, shell=True,
@@ -94,7 +94,10 @@ class MiscTools(object):
         if err or errcode:
             log.debug('Shell call error mess: %s' %err)
 
-        return out
+        if not error:
+            return out
+        else:
+            return out, err, errcode
 
     def write_shell_script(self, prog_name, template):
         f = open(prog_name, 'w')

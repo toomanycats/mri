@@ -1142,13 +1142,42 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
 
         return plan
 
+    def get_header_mgz(self, infile):
+        cmd = "mri_info %s" % infile
+        out = self.call_shell_program(cmd)
+
+        return out
+
     def convert_nii_to_mgh(self, infile, outfile):
         cmd = "mri_convert -i %(infile)s -o %(outfile)s"
         cmd = cmd % {'infile': infile,
                      'outfile': outfile
                      }
 
-        self.call_shell_program(cmd)
+        out, err, errcode = self.call_shell_program(cmd, error=True)
+
+        if log.level == "debug":
+            if err is None and errcode == 0:
+                header = self.get_header_mgz(outfile)
+                log.debug("mgz convert successful\n: new header\n:%s" % header)
+            else:
+                log.debug("mgz convert failed")
+
+    def check_is_mgh(self, infile):
+        string = self.get_header_mgz(infile)
+
+        match = re.search('(type: MGH)', string)
+
+        if match:
+            log.info("is MGH test passed")
+            return True
+        else:
+            log.info("is MGH test failed")
+            return False
+
+
+
+
 
 
 

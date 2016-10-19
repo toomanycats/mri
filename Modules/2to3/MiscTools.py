@@ -5,7 +5,7 @@ from os import path
 import os
 import logging
 import numpy as np
-import uuid #for random strints
+import uuid #for random strings
 import json
 
 #log = logging.getLogger('module_logger')

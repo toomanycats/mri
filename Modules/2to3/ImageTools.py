@@ -898,7 +898,7 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
         elif tol != 'default':
             tolerance = '--tolerance %f' % float(tol)
 
-        cmd = 'dcm2image -rv %(tolerance)s -O "%(output)s" "%(input_dir)s"'
+        cmd = 'dcm2image -rv %(tolerance)s -O "%(output)s" --SeriesDescription "%(input_dir)s"'
         cmd = cmd % {'output': output,
                      'input_dir': input_dir,
                      'tolerance': tolerance

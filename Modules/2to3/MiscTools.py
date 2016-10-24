@@ -91,7 +91,7 @@ class MiscTools(object):
 
         log.debug('Shell call output: %s' %out)
 
-        if err or errcode:
+        if len(err) > 0 or errcode > 0:
             log.error('Shell call error mess: %s' %err)
 
         if not error:

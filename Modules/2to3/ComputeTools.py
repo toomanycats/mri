@@ -37,6 +37,8 @@ class GridTools(MiscTools):
 def freesurfer_template():
     script = """
 #!/usr/bin/bash
+host=$(hostname)
+echo -e "Host:$host\n"
 
 export PATH=/home/dcuneo/anaconda3/bin:$PATH
 export PATH=/home/dcuneo/git_tools:$PATH

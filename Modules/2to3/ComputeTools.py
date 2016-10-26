@@ -63,4 +63,19 @@ python /home/dcuneo/git_pipeline/submit_FS.py --rootdir %(proj_root)s --subjecti
 """
     return script
 
+def GradUnwarp_template():
+    script = """
+#!/usr/bin/bash
 
+host=$(hostname)
+echo -e "Host:$host\n"
+
+export PATH=/home/dcuneo/anaconda3/bin:$PATH
+export PATH=/home/dcuneo/git_pipeline:$PATH
+source activate py3
+
+export PYTHONPATH=/home/dcuneo/git_pipeline:$PYTHONPATH
+export PYTHONPATH=/home/dcuneo/git_python27_mri/Modules/2to3:$PYTHONPATH
+
+python /home/dcuneo/git_pipeline/submit_GU.py -r %(proj_root)s -p %(project)s -s %(sub_id)s -d %(desc)s
+"""

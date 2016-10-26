@@ -34,9 +34,9 @@ class GridTools(MiscTools):
         return out, err, errcode
 
 
-def freesurfer():
+def freesurfer_template():
     script = """
-#!/bin/bash
+#!/usr/bin/bash
 
 export PATH=/home/dcuneo/anaconda3/bin:$PATH
 export PATH=/home/dcuneo/git_tools:$PATH
@@ -56,8 +56,8 @@ export FREESURFER_DIR="/data/sugrue1/FS_test"
 export SUBJECTS_DIR="/data/surgrue1/FS_test"
 
 
-
-$python submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --inputpath %(input_path)s --step %(step)s
+p="/home/dcuneo/git_pipeline"
+python $p/submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --inputpath %(input_path)s --step %(step)s
 """
     return script
 

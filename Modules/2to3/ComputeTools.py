@@ -1,4 +1,7 @@
 from MiscTools import MiscTools
+import os
+
+HOME = os.environ['HOME']
 
 class GridTools(MiscTools):
     def __init__(self):
@@ -18,10 +21,14 @@ class GridTools(MiscTools):
 
         return out, err, errcode
 
-    def qsub(self, program, name, queue):
-        options = " -N %(name)s -q %(queue)s " %{'name': name,
-                                                 'queue': queue
-                                                 }
+    def qsub(self, program, name, queue, stdout=HOME, stderr=HOME):
+        options = " -N %(name)s -q %(queue)s -e %(stderr)s -o %(stdout)s"
+
+        options = options % {'name': name,
+                             'queue': queue,
+                             'stderr': stderr,
+                             'stdout': stdout
+                            }
 
         out, err, errcode = self._call_w_qsub(program, options)
         return out, err, errcode

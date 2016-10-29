@@ -1189,15 +1189,23 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
         return out, err, errcode
 
 
-    def make_dict_from_vol_inven(self, infile):
-        inven = self.volume_inven(infile)
-
+    def make_dict_from_vol_inven(self, infile, failed=False):
         hdr = ["path","type","image_dim_x","image_dim_y","image_dim_z",\
                 "vox_dim_x","vox_dim_y","vox_dim_z","dt","fov","tr","te","ti",\
                 "nframes","phase_dir","acq_dir"]
 
+        if not failed:
+            inven = self.volume_inven(infile)
+
+        else:
+            # dummy values
+            inven = ["" for item in hdr]
+            inven[0] = infile
+
         data_dict = dict(zip(hdr, inven))
         return data_dict
+
+
 
 
 

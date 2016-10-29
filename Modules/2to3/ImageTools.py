@@ -1175,6 +1175,17 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
             log.info("is MGH test failed")
             return False
 
+    def mri_info(self, infile):
+        cmd = "mri_info %s" % infile
+        out, err, errcode = self.call_shell_program(cmd, error=True)
+
+        return out, err, errcode
+
+    def volume_inven(self, infile):
+        cmd = "volume_inventory.sh %s" % infile
+        out, err, errcode = self.call_shell_program(cmd)
+
+        return out, err, errcode
 
 
 

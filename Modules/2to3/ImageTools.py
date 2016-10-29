@@ -4,6 +4,7 @@ Created on Aug 26, 2013
 @author: dpc
 '''
 
+import pandas as pd
 import numpy as np
 import nipy
 import nibabel as nib
@@ -1188,6 +1189,15 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
         return out, err, errcode
 
 
+    def make_dict_from_vol_inven(self, infile):
+        inven = self.volume_inven(infile)
+
+        hdr = ["path","type","image_dim_x","image_dim_y","image_dim_z",\
+                "vox_dim_x","vox_dim_y","vox_dim_z","dt","fov","tr","te","ti",\
+                "nframes","phase_dir","acq_dir"]
+
+        data_dict = dict(zip(hdr, inven))
+        return data_dict
 
 
 

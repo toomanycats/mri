@@ -1183,7 +1183,7 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
 
     def volume_inven(self, infile):
         cmd = "volume_inventory.sh %s" % infile
-        out, err, errcode = self.call_shell_program(cmd)
+        out, err, errcode = self.call_shell_program(cmd, error=True)
 
         return out, err, errcode
 

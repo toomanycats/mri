@@ -906,7 +906,8 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
                      'tolerance': tolerance
                     }
 
-        self.call_shell_program(cmd)
+        out, err, errcode = self.call_shell_program(cmd, error=True)
+        return out, err, errcode
 
     @log_method
     def convert_dcm_to_nii(self, input_dir, output_pattern='%D_%n.nii.gz', tol='default'):
@@ -1201,16 +1202,34 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
 
         if not failed:
             inven, err, errcode = self.volume_inven(infile)
+            # always set the path from infile as cheap insurance
+            data_dict = dict(zip(hdr, inven))
+            data_dict['path'] = infile
+            return data_dict
 
         elif failed or errcode > 0:
             # dummy values
             inven = ["" for item in hdr]
-            inven[0] = infile
+            data_dict = {}
+            data_dict['path'] = infile
+            data_dict['type'] = "fail"
+            data_dict['image_dim_x'] = 0
+            data_dict['image_dim_y'] = 0
+            data_dict['image_dim_z'] = 0
+            data_dict['vox_dim_x'] = 0
+            data_dict['vox_dim_y'] = 0
+            data_dict['vox_dim_z'] = 0
+            data_dict['dt'] = "Null"
+            data_dict['fov'] = 0
+            data_dict['tr'] = 0
+            data_dict['te'] = 0
+            data_dict['ti'] = 0
+            data_dict['nframes'] = 0
+            data_dict['phase_dir'] = "Null"
+            data_dict['acq_dir'] = "Null"
 
-        data_dict = dict(zip(hdr, inven))
-        # always set the path from infile as cheap insurance
-        data_dict['path'] = infile
-        return data_dict
+            return data_dict
+
 
 
 

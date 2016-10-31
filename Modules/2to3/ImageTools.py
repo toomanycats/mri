@@ -4,6 +4,7 @@ Created on Aug 26, 2013
 @author: dpc
 '''
 
+from io import StringIO
 import pandas as pd
 import numpy as np
 import nipy
@@ -1186,6 +1187,10 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
         cmd = "volume_inventory.sh %s" % infile
         out, err, errcode = self.call_shell_program(cmd, error=True)
 
+        out = out.replace("'", "").replace(r'\n', '')
+        out = out.split(",")
+        out = map(lambda x: x.replace('"', ''), out)
+
         return out, err, errcode
 
 
@@ -1195,14 +1200,16 @@ prelude -c %(complex_ratio)s -m %(mask)s -u %(outfile)s'''
                 "nframes","phase_dir","acq_dir"]
 
         if not failed:
-            inven = self.volume_inven(infile)
+            inven, err, errcode = self.volume_inven(infile)
 
-        else:
+        elif failed or errcode > 0:
             # dummy values
             inven = ["" for item in hdr]
             inven[0] = infile
 
         data_dict = dict(zip(hdr, inven))
+        # always set the path from infile as cheap insurance
+        data_dict['path'] = infile
         return data_dict
 
 

@@ -92,7 +92,7 @@ class MiscTools(object):
         log.debug('Shell call output: %s' %out)
 
         # empty byte string has length 3
-        if len(err) > 3 or errcode > 0:
+        if len(err) > 3:
             log.error('Shell call error mess: %s' %err)
 
         if not error:

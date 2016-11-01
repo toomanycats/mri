@@ -58,7 +58,7 @@ export FREESURFER_DIR="/data/sugrue1/FS_test"
 export SUBJECTS_DIR="/data/surgrue1/FS_test"
 
 
-python /home/dcuneo/git_pipeline/submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --inputpath %(input_path)s --step %(step)s
+python /home/dcuneo/git_pipeline/CommandLineProg/submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --inputpath %(input_path)s --step %(step)s
 
 """
     return script

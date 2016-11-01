@@ -38,7 +38,7 @@ def freesurfer_template():
     script = """
 #!/usr/bin/bash
 
-hostname
+hostname 2>&1
 
 export PATH=/home/dcuneo/anaconda3/bin:$PATH
 export PATH=/home/dcuneo/git_tools:$PATH

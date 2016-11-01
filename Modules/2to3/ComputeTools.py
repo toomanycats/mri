@@ -48,7 +48,7 @@ source activate py3
 export PYTHONPATH=/home/dcuneo/git_pipeline:$PYTHONPATH
 export PYTHONPATH=/home/dcuneo/git_python27_mri/Modules/2to3:$PYTHONPATH
 
-#FreeSurfer class setups up other enviroment var
+#FreeSurfer class sets up up other enviroment var
 
 python /home/dcuneo/git_pipeline/CommandLineProg/submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --seriesdesc %(series_desc)s --inputpath %(input_path)s --step %(step)s
 

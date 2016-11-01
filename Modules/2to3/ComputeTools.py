@@ -48,15 +48,7 @@ source activate py3
 export PYTHONPATH=/home/dcuneo/git_pipeline:$PYTHONPATH
 export PYTHONPATH=/home/dcuneo/git_python27_mri/Modules/2to3:$PYTHONPATH
 
-export PATH=/netopt/rhel7/freesurfer/bin:$PATH
-export PATH=/netopt/rhel7/freesurfer/mni/bin/:$PATH
-
-export PERL5LIB=/netopt/rhel7/freesurfer/mni/lib/perl5/5.8.5:$PERL5LIB
-
-export FREESURFER_HOME="/netopt/rhel7/freesurfer"
-export FREESURFER_DIR="/data/sugrue1/FS_test"
-export SUBJECTS_DIR="/data/surgrue1/FS_test"
-
+#FreeSurfer class setups up other enviroment var
 
 python /home/dcuneo/git_pipeline/CommandLineProg/submit_FS.py --rootdir %(proj_root)s --subjectid %(sub_id)s --inputpath %(input_path)s --step %(step)s
 

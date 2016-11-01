@@ -8,7 +8,7 @@ class GridTools(MiscTools):
         pass
 
     def _call_w_qsub(self, program, options):
-        cmd = 'echo "hostname;%(program)s" | qsub  %(options)s'
+        cmd = 'echo "%(program)s" | qsub  %(options)s'
 
         cmd = cmd %{'program':program,
                     'options':options,
@@ -37,8 +37,8 @@ class GridTools(MiscTools):
 def freesurfer_template():
     script = """
 #!/usr/bin/bash
-host=$(hostname)
-echo -e "Host:$host\n"
+
+hostname
 
 export PATH=/home/dcuneo/anaconda3/bin:$PATH
 export PATH=/home/dcuneo/git_tools:$PATH

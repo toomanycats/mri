@@ -15,7 +15,7 @@ from MiscTools import log_method
 class SignalProcessTools(object):
     def __init__(self, PathType='production'):
         self.misctools = MiscTools()
-        #self.imagetools = ImageTools(PathType)
+        self.imagetools = ImageTools()
 
     def low_pass_filter(self,input_signal, cutoff_freq, sample_rate_Hz, order):
         '''Wn : array_like

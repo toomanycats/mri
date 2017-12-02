@@ -4,6 +4,7 @@ Created on Oct 10, 2013
 @author: dpc
 '''
 
+import pdb
 from os import path
 import numpy as np
 import ImageTools
@@ -18,8 +19,8 @@ from scipy.ndimage.morphology import binary_erosion, generate_binary_structure
 import nipy.algorithms.statistics.empirical_pvalue as empirical_pvalue
 from nipy.modalities.fmri.glm import GeneralLinearModel as glm
 from scipy import ndimage, stats
-from pynfft import NFFT
-from nilearn.decomposition.canica import CanICA
+#from pynfft import NFFT
+#from nilearn.decomposition.canica import CanICA
 from operator import itemgetter
 from itertools import groupby
 
@@ -29,63 +30,63 @@ invert = np.linalg.inv
 imagetools = ImageTools.ImageTools()
 sigtools = SignalProcessTools.SignalProcessTools()
 misctools = MiscTools.MiscTools()
-save_new_image = ImageTools.ImageTools().save_new_image   
+save_new_image = ImageTools.ImageTools().save_new_image
 
 # used just for module methods
-static_paths = StaticPaths.StaticPaths()
+#static_paths = StaticPaths.StaticPaths()
 
 class BandwidthTR(object):
     def __init__(self, Type, rs_file):
         '''Object containing import bandwidth and TR information. By supplying arg rs_file
         you can ste the TR using a 4D resting state data file.'''
-        
+
         self.TR = imagetools.get_pixdims(rs_file)[4]
-        
+
         if Type == 'human':
             self.f_lp = 0.009
             self.f_ub = 0.09
-            
+
         elif Type == 'rat':
             self.f_lp = 0.002
             self.f_ub = 0.01
-         
+
         else:
-            raise Exception(" Type not understood: %s.  Choices are 'rat' and 'human'. " %Type)   
+            raise Exception(" Type not understood: %s.  Choices are 'rat' and 'human'. " %Type)
 
 
 class DetrendMovementNoise(object):
 
-    def __init__(self, root_dir, rs_4D_path, confound_cleaned_output, mask, sub_id, time_point='base', 
+    def __init__(self, root_dir, rs_4D_path, confound_cleaned_output, mask, sub_id, time_point='base',
                  Type='human', wm_rs=None, aux_tissue=None, csf_rs=None, move_par_type=None):
-        
+
         self.root_dir = root_dir
         self.wm_rs = wm_rs
         self.aux_tissue = aux_tissue
         self.csf_rs = csf_rs
-        
+
         self.mask_path = mask
         self.rs_path = rs_4D_path
         self.Type = Type
         self.clean_rs_out_path = confound_cleaned_output
-         
+
         # additional options
         self.global_mean = True
         self.use_abs_motion_con = True
         self.move_par_type = move_par_type
-        self.aux_conf = False 
-        
+        self.aux_conf = False
+
         self.der_all_confounds = True
         self.der_tissue_confounds_only = False
-            
+
         self.motion_f2f_parameters_file = path.join(self.root_dir, 'motion_f2f_params.txt')
-        
-        self.static_paths = StaticPaths.StaticPaths()
-        self.static_paths.set_ncanda_full_paths(sub_id=sub_id, time_point=time_point)
-        
-        self.num_vols_ref = 260
+
+        #self.static_paths = StaticPaths.StaticPaths()
+        #self.static_paths.set_ncanda_full_paths(sub_id=sub_id, time_point=time_point)
+
+        self.num_vols_ref = 200
         # starts with 274 or 275, 5 dummies at acq. I rewrote Torsten's
         # script to apply all 275(4) volumes then drop 15 later
-        
+
         # aux confound options
         self.x0 = None
         self.x1 = None
@@ -94,25 +95,25 @@ class DetrendMovementNoise(object):
         self.z0 = None
         self.z1 = None
 
-    def get_bandwidth_and_TR(self):    
+    def get_bandwidth_and_TR(self):
         bw_tr = BandwidthTR(self.Type, self.rs_path)
-               
+
         self.f_lp = bw_tr.f_lp
         self.f_up = bw_tr.f_ub
         self.TR = bw_tr.TR
         self.sample_rate = np.round(np.float(1 / self.TR), decimals=4)
-    
+
     def load_data_from_images(self):
         self.mask = imagetools.load_image(self.mask_path)
         self.mask_data = self.mask.get_data()
         self.mask_data[np.isnan(self.mask_data)] = 0
-        
+
         self.rs_obj = imagetools.load_image(self.rs_path)
         self.rs_data =  np.array(self.rs_obj.get_data(), dtype=np.float32)
         self.rs_data[np.isnan(self.rs_data)] = 0
-        
+
         self.data_dim = self.rs_data.shape
-        
+
     def main(self):
         self.get_bandwidth_and_TR()
         # sets the self.mats_path variable
@@ -120,55 +121,55 @@ class DetrendMovementNoise(object):
             # new method, is to re-compute the motion confound using first vol as ref
             # I don't trust the mcflirt params for motion confounds.
             self.mats_path = path.join(self.root_dir, 'motion_params.mat')
-                  
+
         elif self.move_par_type and self.move_par_type == 'cmtk':
             self.mats_path = misctools.glob_for_files(self.root_dir, '*.f2f', num_limit=1)
-        
+
         else:
             raise Exception("Motion parameter file not specified correctly.")
-        
+
         # sets self.rs_data and mask data, and clears nan's
         self.load_data_from_images()
-        
+
         # get confounds
         log.debug("getting confounds")
         confounds = self.get_all_confounds()
-        
+
         # regress out the confounds
         log.debug("Removing confounds")
         data, ind = self.detrend_data(confounds)
- 
+
         log.debug("Saving cleaned rs data back to disc.")
-        self.save_clean_image(data, ind)  
-  
+        self.save_clean_image(data, ind)
+
     def get_comp_of_confound(self, roi, num_comp):
         _,_,V = np.linalg.svd(roi)
-        
+
         con = V[:, 0:num_comp]
-        
+
         return np.mean(con, axis=1)
-        
+
     def get_tissue_confound(self, tissue_mask):
         tiss_mask_obj = imagetools.load_image(tissue_mask)
         tiss_mask_data = tiss_mask_obj.get_data()
-        
+
         # deal with the occasional x,y,z,1 shaped data
         tiss_mask_data = np.squeeze(tiss_mask_data)
-        
+
         tiss_data = np.zeros((self.rs_data.shape[3], 1))
         for i in range(self.rs_data.shape[3]):
             tiss_data[i] = np.mean(self.rs_data[:,:,:,i] * tiss_mask_data)
-        
+
         #np.save(path.join(self.root_dir, 'wm_mean_ts.npy'), wm_data)
         return tiss_data
-            
+
     def get_global_mean_confound(self):
         mean = np.zeros((self.rs_data.shape[3], 1))
         for i in range(mean.shape[0]):
             mean[i] = (self.mask_data * self.rs_data[:,:,:,i]).mean()
-        
+
         return mean
-        
+
     def get_aux_confound(self):
         x0 = self.x0
         x1 = self.x1
@@ -176,36 +177,36 @@ class DetrendMovementNoise(object):
         y1 = self.y1
         z0 = self.z0
         z1 = self.z1
-        
+
         roi = self.rs_data[x0:x1,y0:y1,z0:z1,:]
-        
+
         if roi.ndim != 4:
             raise Exception(" Aux confound file containing coord does not have the proper ammount. Dim of roi was less than 3.")
-        
+
         roi = np.squeeze(roi)
-        
+
         if roi.ndim == 4:
             confound = roi.mean(0).mean(0).mean(0)
         elif roi.ndim == 3:
             confound = roi.mean(0).mean(0)
         elif roi.ndim == 2:
-            confound = roi.mean(0)  
+            confound = roi.mean(0)
         elif roi.ndim == 1:
             confound = roi
-        
+
         confound = np.reshape(confound, (confound.shape[0], 1))
-        
+
         return confound
-    
+
     @log_method
-    def compute_derivative_of_confounds(self, confounds, order, win):   
+    def compute_derivative_of_confounds(self, confounds, order, win):
         der = np.zeros_like(confounds, dtype=np.float32)
-        
-        for i in range(confounds.shape[1]): 
+
+        for i in range(confounds.shape[1]):
             der[:,i] = sigtools.savitzky_golay(confounds[:,i], window_size=win, order=order, deriv=1, rate=1)
-    
+
         return der
-    
+
     def get_motion_f2f_params_mcflirt(self, mats_path):
         mats = self.load_mat_files(mats_path)
         deltaMat = self.compute_temp_der(mats)
@@ -215,107 +216,107 @@ class DetrendMovementNoise(object):
         confounds = deltaTrans
         confounds = np.hstack((confounds, thx))
         confounds = np.hstack((confounds, thy))
-        confounds = np.hstack((confounds, thz))  
-        
+        confounds = np.hstack((confounds, thz))
+
         return confounds
-    
+
     def get_aux_parc_tissue_conf(self):
         label_data = imagetools.load_image(self.aux_tissue).get_data()
         labels = np.unique(label_data)[1:] # toss 0
-        
+
         tiss_comp = np.zeros((self.data_dim[3], labels.size), np.float32)
-        
+
         for i, lab in enumerate(labels):
             ind = label_data == lab
             roi = self.rs_data[ind,:]
 #            delta_sigma_ev = sigtools.examine_eigen_values_per_label(roi, lab)
             tiss_comp[:, i] = roi.mean(axis=0)
-            
+
 #            try:
 #                 if lab == 16:
 #                     thres = 0.70
-#                 thres = 0.25    
+#                 thres = 0.25
 #                 num_comp = np.where(delta_sigma_ev < thres)[0][1]
 #             except IndexError:
-#                 tiss_comp[:, i] = roi.mean(axis=0) 
+#                 tiss_comp[:, i] = roi.mean(axis=0)
 #                 log.info('Label:%s  mean taken' %lab)
 #                 continue
-#            
+#
 #            log.info('label:%s :num comp:%i' %(lab, num_comp))
 #            tiss_comp[:, i] = self.get_comp_of_confound(roi, num_comp)
-            
-        return tiss_comp    
-    
+
+        return tiss_comp
+
     def get_all_confounds(self):
         confounds = [] # dummy to allow concat without motion params
-        
+
         if  self.move_par_type == 'mcflirt':
-            # use the name space var b/c we could also ask for other motion      
+            # use the name space var b/c we could also ask for other motion
             # parameters, such as abs motion from 1 st frame
             confounds = self.get_motion_f2f_params_mcflirt(self.mats_path)
             np.savetxt(self.motion_f2f_parameters_file, confounds)
-        
+
         if self.move_par_type == 'cmtk':
-            confounds = self.get_cmtk_move_par()   
-                 
-        if self.global_mean:       
+            confounds = self.get_cmtk_move_par()
+
+        if self.global_mean:
             global_mean = self.get_global_mean_confound()
             confounds = np.hstack((confounds, global_mean))
-        
+
         if self.aux_conf:
             aux = self.get_aux_confound()
             confounds = np.hstack((confounds, aux))
-            
+
         if self.wm_rs is not None:
             wm_confound = self.get_tissue_confound(self.wm_rs)
             confounds = np.hstack((confounds, wm_confound))
-        
+
         if self.aux_tissue is not None:
             aux_confound = self.get_aux_parc_tissue_conf()
             confounds = np.hstack((confounds, aux_confound))
-        
+
         if self.csf_rs is not None:
             csf_confound = self.get_tissue_confound(self.csf_rs)
             confounds = np.hstack((confounds, csf_confound))
-        
+
         if self.der_tissue_confounds_only:
             tiss_confounds = np.hstack((wm_confound, aux_confound))
             der = self.compute_derivative_of_confounds(tiss_confounds, order=2, win=5)
             confounds = np.hstack((confounds, der))
-        
+
         if self.use_abs_motion_con:
             abs_motion_con = self.get_abs_motion_params(self.mats_path)
             confounds = np.hstack((confounds, abs_motion_con))
-        
+
         if self.der_all_confounds:
             der = self.compute_derivative_of_confounds(confounds, order=1, win=3)
-            confounds = np.hstack((confounds, der))     
-        
+            confounds = np.hstack((confounds, der))
+
         np.savetxt(path.join(self.root_dir, 'all_confounds.txt'), confounds)
-        
+
         return confounds
-    
+
     def save_clean_image(self, data, ind):
         clean_4D = np.zeros_like(self.rs_data, dtype=data.dtype)
-        clean_4D[ind] = data                 
-        
-        # save the final image output    
+        clean_4D[ind] = data
+
+        # save the final image output
         save_new_image(clean_4D, self.clean_rs_out_path, self.rs_obj.coordmap)
-    
+
     def detrend_data(self, confounds):
-        
+
         # band pass filter the confounds per Hallquist
-        ## Transpose the confounds n/c filter uses row major order   
+        ## Transpose the confounds n/c filter uses row major order
         confounds = sigtools.butter_bandpass(self.f_lp, self.f_up, self.sample_rate, confounds.T, order=5)
-        
+
         # back to col major order for clean method coming up
         confounds = confounds.T
-                
+
         roi, ind, _, _ = imagetools.get_roi(self.rs_path, self.mask_path)
-        
+
         roi = sigtools.butter_bandpass(self.f_lp, self.f_up, self.sample_rate, roi, order=5)
-        
-        # conditioning for qr decomp 
+
+        # conditioning for qr decomp
         # col maj, detrend and norm along rows, axis=0
         sig = np.std(confounds, ddof=1, keepdims=True, axis=0)
         sig[sig == 0] = 1
@@ -330,82 +331,82 @@ class DetrendMovementNoise(object):
         Q = qr_factor(confounds, mode='economic')[0]
         roi = roi.T
         roi -= np.dot(Q, np.dot(Q.T, roi))
-        
+
         roi = roi.astype(np.float32, copy=False)
-        
+
         log.debug("Saving orthog confounds to text file.")
         np.savetxt(path.join(self.root_dir, 'confounds_orthog.txt'), Q)
-        
+
         roi[np.isnan(roi)] = 0
-        
-        return roi.T, ind                                 
+
+        return roi.T, ind
 
     def load_mat_files(self, base_path):
-                
+
         mats = np.zeros((self.data_dim[3],4,4))
         # only load in the mats we need. dropping 1 to have 268 even num, means toss MAT_0000
-        for i in range(0, self.data_dim[3]): 
-            index = i 
+        for i in range(0, self.data_dim[3]):
+            index = i
             mat_path = "MAT_%04d" %index
             fp = path.join(base_path, mat_path)
             mats[i,:,:] = np.loadtxt(fp)
-    
+
         log.info('mat files loaded.')
         log.debug('Number of mat files loaded: %i' %mats.shape[0])
-        
-        return mats  
-    
+
+        return mats
+
     def get_delta_trans(self, mats):
-        deltaTrans = np.zeros((self.data_dim[3], 3))  
+        deltaTrans = np.zeros((self.data_dim[3], 3))
         for i in range(1,mats.shape[0]):
-            deltaTrans[i,:] = mats[i,:3,3] - mats[i-1,:3,3] 
-        
+            deltaTrans[i,:] = mats[i,:3,3] - mats[i-1,:3,3]
+
         log.info('translations computed')
         log.debug('Number of translation points: %i:' %deltaTrans.shape[0])
-        
+
         return deltaTrans
-    
+
     def get_trans(self, mats):
-        trans = np.zeros((self.data_dim[3], 3))  
+        trans = np.zeros((self.data_dim[3], 3))
         for i in range(1,mats.shape[0]):
-            trans[i,:] = mats[i,:3,3] 
-        
+            trans[i,:] = mats[i,:3,3]
+
         return trans
-    
-    
+
+
     def compute_temp_der(self, mats):
         deltaMat = np.zeros((self.data_dim[3],4,4))
         for i in range(1,len(mats)-1):
             deltaMat[i,:,:] =  np.dot( mats[i+1,:,:], invert(mats[i,:,:]) )
-      
+
         log.info('Derivatives of affines computed.')
         log.debug('Number of affines derivatives: %i' %deltaMat.shape[0])
-        
+
         log.debug("temp der computed")
-        
+
         return deltaMat
-    
+
     def get_rots(self, deltaRotmat):
-        theta_x = np.zeros((self.data_dim[3],1)) 
+        theta_x = np.zeros((self.data_dim[3],1))
         theta_y = theta_x.copy()
         theta_z = theta_x.copy()
-        
+
         for i, mat in enumerate(deltaRotmat):
             rots = nie.mat2euler(mat[:3,:3])
             theta_z[i] = rots[0]
             theta_y[i] = rots[1]
             theta_x[i] = rots[2]
-    
+
         log.debug('Rots computed.')
-        
+
         return theta_x, theta_y, theta_z
 
     def get_cmtk_move_par(self):
         par = np.loadtxt(self.mats_path, dtype=np.float32)
-        
+
         log.debug("cmtk p2p file loaded.")
         return par
-    
+
     def get_abs_motion_params(self, mats_path):
         mats = self.load_mat_files(mats_path)
         trans = self.get_trans(mats)
@@ -414,194 +415,194 @@ class DetrendMovementNoise(object):
         confounds = trans
         confounds = np.hstack((confounds, thx))
         confounds = np.hstack((confounds, thy))
-        confounds = np.hstack((confounds, thz))  
-        
+        confounds = np.hstack((confounds, thz))
+
         rms = self.get_abs_motion_rms(confounds)
-        
+
         return rms[:, np.newaxis]
 
-    def get_abs_motion_rms(self, confounds):   
+    def get_abs_motion_rms(self, confounds):
         motion = MotionAnalysis(self.root_dir, '', self.mask_path, '',  confounds)
         rms = motion.calculate_trajectory_dpc()
-        
+
         return rms
-        
+
 
 class MakeMeanTimeSeries(object):
 
     def __init__(self, root_dir, rs_data_path, parc_path=None, Type='human'):
         self.root_dir = root_dir
-        self.parc_path = parc_path    
+        self.parc_path = parc_path
         self.rs_path = rs_data_path
-        
-        self.averages_path = path.join(self.root_dir,'roi_averages.npy')    
+
+        self.averages_path = path.join(self.root_dir,'roi_averages.npy')
         self.roi_dict_path = static_paths.roi_dict
-    
+
         bw_tr = BandwidthTR(Type, self.rs_path)
         self.TR = bw_tr.TR
-       
+
         self.erode_bool = False # incase you need to first erode the parc image
         self.parc_ero = path.join(self.root_dir, 'parc_ero.nii.gz')
 
     def load_data(self):
         if self.parc_path is not None:
-            
+
             self.parc_obj = imagetools.load_image(self.parc_path)
             self.parc_data = self.parc_obj.get_data()
             self.parc_data = np.squeeze(self.parc_data)
             self.parc_erode = self.parc_path.replace('.nii.gz', '_eroded.nii.gz')
-    
+
         self.rs_obj = imagetools.load_image(self.rs_path)
         self.rs_data = self.rs_obj.get_data()
-        self.rs_dim = self.rs_data.shape 
-    
+        self.rs_dim = self.rs_data.shape
+
         self.roi_dict = load_roi_dict(self.roi_dict_path)
-    
+
     def main(self):
         self.load_data()
-        
+
         if self.erode_bool:
             self.erode_roi()
-        
+
         self.average_roi_tc()
-            
+
     def average_roi_tc(self):
         roi_names = list(self.roi_dict.keys())
-        roi_avg_data = np.empty( (len(roi_names), self.rs_data.shape[3]), dtype=np.float32 ) 
+        roi_avg_data = np.empty( (len(roi_names), self.rs_data.shape[3]), dtype=np.float32 )
         roi_avg_data[:] = np.nan
-        
+
         for name in roi_names:
             index  = self.roi_dict[name]['index']
-            label_match = self.parc_data == self.roi_dict[name]['label']  
-            
+            label_match = self.parc_data == self.roi_dict[name]['label']
+
             if not np.all(np.bitwise_not(label_match)):# no match found, will return all False's
                 temp = self.rs_data[label_match,:]
-                                
+
                 temp = temp[np.all(temp, axis=1)]# avoid a vector of all zeros, at a given voxel
                 roi_avg_data[index,:] = np.mean(temp, axis=0)
-        
+
         roi_avg_data -= roi_avg_data.mean(axis=1, keepdims=True) # center
         norm = roi_avg_data.std(axis=1, keepdims=True) # deal with this sep to keep Warnings from being raised
         norm[ norm == 0 ] = 1
         roi_avg_data /= norm
-        
-        np.save(self.averages_path, roi_avg_data)     
+
+        np.save(self.averages_path, roi_avg_data)
 
     def erode_roi(self):
         struct = generate_binary_structure(rank=3, connectivity=3)
         temp = np.zeros_like(self.parc_data, dtype=np.uint8)
         ero = np.zeros_like(self.parc_data, dtype=np.uint8)
-        roi_names = list(self.roi_dict.keys()) 
-        
+        roi_names = list(self.roi_dict.keys())
+
         for name in roi_names:
             #index  = self.roi_dict[name]['index']
-            mask = self.parc_data == self.roi_dict[name]['label']  
+            mask = self.parc_data == self.roi_dict[name]['label']
             temp[mask] = 1
             out = binary_erosion(temp, structure=struct, mask=mask)
-            ero[out] = self.roi_dict[name]['label'] 
+            ero[out] = self.roi_dict[name]['label']
             temp = np.zeros_like(self.parc_data, dtype=np.uint8)
-            
-        imagetools.save_new_image(ero, self.parc_ero, self.parc_obj.coordmap)                   
-        self.parc_data = ero   
-                          
+
+        imagetools.save_new_image(ero, self.parc_ero, self.parc_obj.coordmap)
+        self.parc_data = ero
+
     def get_average_from_rsREL(self):
-        rsREL = static_paths.rsREL    
+        rsREL = static_paths.rsREL
         roi_data = imagetools.load_image(rsREL).get_data()
         rois = np.unique(roi_data)[1:] # toss the zero
-        
-        roi_avg_data = np.zeros( (len(rois), self.rs_data.shape[3]), dtype=np.float32 ) 
+
+        roi_avg_data = np.zeros( (len(rois), self.rs_data.shape[3]), dtype=np.float32 )
 
         for i, roi in enumerate(rois):
-            # make mask 
-            label_match = roi_data == roi  
+            # make mask
+            label_match = roi_data == roi
             temp = self.rs_data[label_match,:]
             temp = temp[np.all(temp, axis=1)]# avoid a vector of all zeros, at a given voxel
             roi_avg_data[i,:] = np.mean(temp, axis=0)
-        
+
         roi_avg_data -= roi_avg_data.mean(axis=1, keepdims=True) # center
         norm = roi_avg_data.std(axis=1, keepdims=True) # deal with this sep to keep Warnings from being raised
         norm[ norm == 0 ] = 1
         roi_avg_data /= norm
-        
+
         return roi_avg_data
-    
+
 
 class ProcessTimeSeriesRoi(object):
-    def __init__(self, root_dir, roi_averages_path, Type, rs_image_path, 
+    def __init__(self, root_dir, roi_averages_path, Type, rs_image_path,
                  parc_path, rs_mask_path):
-        
+
         self.root_dir = root_dir
         self.parc_path = parc_path
         self.rs_mask_path = rs_mask_path
-        self.rs_image_path = rs_image_path 
+        self.rs_image_path = rs_image_path
         self.roi_averages_path = roi_averages_path
         self.roi_dict_path = static_paths.roi_dict
-        self.corr_path = path.join(self.root_dir, 'corr.npy') 
-        
+        self.corr_path = path.join(self.root_dir, 'corr.npy')
+
         self.Type = Type
-    
-    def load_data(self):    
+
+    def load_data(self):
         self.roi_averages = np.load(self.roi_averages_path)
-        
+
         if self.Type == 'human':
             self.roi_dict = load_roi_dict(self.roi_dict_path)
-            roi_names = list(self.roi_dict.keys()) 
-          
+            roi_names = list(self.roi_dict.keys())
+
         elif self.Type == 'rat':
             roi_names = [str(num) for num in range(0, self.roi_averages.shape[1])]
             roi_names = np.array(roi_names)
 
         else:
             raise Exception("Type not understood. Choices are 'human' or 'rat', you entered:%s" %self.Type)
-        
+
     def coherence(self):
         pass
 
     def correlation(self, p_thres=0.05):
         self.load_data()
-        
+
         roi = self.roi_averages
 
         corr = np.corrcoef(roi)
-                
+
 #         enn = empirical_pvalue.NormalEmpiricalNull(corr.ravel())
-#         corr_value_thres = enn.uncorrected_threshold(p_thres) 
-#         corr[corr < corr_value_thres] = 0 
-        
+#         corr_value_thres = enn.uncorrected_threshold(p_thres)
+#         corr[corr < corr_value_thres] = 0
+
         np.save(self.corr_path, corr)
-        
-        return corr 
+
+        return corr
 
     def seed_analysis(self, seed, targets, method='corr'):
         pass
-     
-    @classmethod        
+
+    @classmethod
     def create_vol_for_vis(self, roi_dict, parc_path, corr):
         parc_obj =  imagetools.load_image(parc_path)
         parc_data = parc_obj.get_data()
-        
+
         output = np.zeros(parc_data.shape)
-        
+
         for name in list(roi_dict.keys()):
             ind = parc_data == roi_dict[name]['label']
             i = roi_dict[name]['index']
             output[ind] = corr[i,0]
-            
-        return output          
-    
+
+        return output
+
 
 class VoxelWiseAnalysis(object):
     def __init__(self, root_dir, rs_path, rs_mask_path, Type='human'):
-        
+
         self.global_corr_thres = 0.80
         #self.Threshold_Corr_values_Bool = False # not gonna use this probably but here some good code here I think
         self.root_dir = root_dir
         self.rs_path = rs_path
         self.rs_mask_path = rs_mask_path
-        
+
         bw_obj = BandwidthTR(Type, rs_path)
         self.TR = bw_obj.TR
-         
+
         self.corr_binary = None
         self.corr = None
         self.corr_path_binary = path.join(self.root_dir, 'corr_binary.npy')
@@ -609,13 +610,13 @@ class VoxelWiseAnalysis(object):
         self.ind = None
         self.roi_shape = None
         self.rs_coordmap = None
- 
+
         self.deg_map_path = path.join(self.root_dir, 'deg_map.nii.gz')
         self.local_clus_coef_path = path.join(self.root_dir, 'local_clustering_coefs.nii.gz')
         self.tot_conn_path =  path.join(self.root_dir, 'total_connectivity.nii.gz')
-        
+
         self.state = self.make_rand_gen_state_obj()
-        
+
     def make_rand_gen_state_obj(self):
         part1 = 'MT19937'
         part2 = np.array([1182714280, 1154484342, 2894605489, 2592055667, 2601979739,
@@ -744,29 +745,29 @@ class VoxelWiseAnalysis(object):
        1667713671,  162768162, 4135339878, 4239493774, 3891933754,
        2505979596,  470325593,  859051992,  243336714], dtype=np.uint32)
         part3 = 332
-        
-        return (part1, part2, part3) 
- 
+
+        return (part1, part2, part3)
+
     def _check_roi_mask_parameters(self):
         try:
             assert self.roi_shape is not None
             assert self.ind is not None
             assert self.rs_coordmap is not None
             assert self.i_ind is not None
-        
+
         except:
             _, self.ind, self.roi_shape, self.rs_coordmap = imagetools.get_roi(self.rs_path, self.rs_mask_path)
-                
+
             self.i_ind = np.nonzero(self.ind)[0]
             self.j_ind = np.nonzero(self.ind)[1]
             self.k_ind = np.nonzero(self.ind)[2]
-    
+
     def _check_for_binary_corr(self):
         if self.corr_binary is None:
             if path.exists(self.corr_path_binary):
                 self.corr_binary = np.load(self.corr_path_binary)
                 self._check_roi_mask_parameters()
-            
+
             else:
                 self._check_for_corr()
                 self.make_binary_corr(self.global_corr_thres)
@@ -774,186 +775,190 @@ class VoxelWiseAnalysis(object):
     def _check_for_corr(self):
         if self.corr is None:
             if path.exists(self.corr_path):
-                self.load_corr_matrix()    
+                self.load_corr_matrix()
                 self._check_roi_mask_parameters()
-                
+
             else:
-                self.compute_corr()    
-                  
-    def compute_corr(self):               
+                self.compute_corr()
+
+    def compute_corr(self):
         '''scale types are: position or size'''
         log.debug("Loading ROI.")
         # using class var for the roi which could be large
         # forcing it to be called by reference when sent to various methods.
         self.roi, self.ind, self.roi_shape, self.rs_coordmap = imagetools.get_roi(self.rs_path, self.rs_mask_path)
-        
+
 #         if not np.all(self.roi):
 #             num_of_zeros = self.roi[self.roi == 0].size
 #             self.roi[self.roi == 0] = np.random.randn(num_of_zeros)
 #             log.info("ROI getting zeros replaced with random numbers.")
-        
+
+        # center the time series b/c we don't care about amplitudes
+        self.roi -= self.roi.mean(axis=1, keepdims=True)
+        self.roi /= self.roi.std(axis=1, keepdims=True)
+
         log.debug("Computing corr.")
         self._corr() # sets self.corr
-        
+
         self.corr -= self.corr.mean()
         self.corr /= self.corr.max(keepdims=True)
         np.fill_diagonal(self.corr, 0)
-        
+
         np.save(self.corr_path, self.corr)
-        
-    def make_binary_corr(self, thres):    
+
+    def make_binary_corr(self, thres):
         corr = self.corr.copy()
-        
+
         corr[np.isnan(corr)] = 0
         corr[corr >= thres] = 1
         corr[corr < 1 ] = 0
-    
+
         self.corr_binary = corr
-                         
+
         np.save(self.corr_path_binary, self.corr_binary)
 
     def compute_degree(self):
         self._check_for_binary_corr()
-        
+
         deg_map = np.zeros(self.roi_shape[0:3], dtype=np.float32)
-        deg_map[self.ind] = self.corr_binary.sum(axis=0)        
-        
+        deg_map[self.ind] = self.corr_binary.sum(axis=0)
+
         imagetools.save_new_image(deg_map, self.deg_map_path, self.rs_coordmap, log_this=True)
 
     def _corr(self):
         if not self.roi.flags.f_contiguous:
             self.roi = np.asfortranarray(self.roi)
-        
+
         if self.roi.dtype != np.float32:
             self.roi = self.roi.astype(np.float32, copy=False)
-                    
+
         n =  float(self.roi.shape[1] - 1)
-        
+
         log.debug("Computing Dot product")
         cov = np.dot(self.roi, self.roi.T)
         cov /= n
         self.roi = []
         #cov = blas.sgemm(alpha=1.0, beta=n, a=self.roi, n=self.roi, trans_b=True)
         #cov /= n
-        
+
         sigma = np.diag(cov)
         sigma = sigma[:, np.newaxis]
-        
+
         outer = np.sqrt(np.dot(sigma, sigma.T))
         #outer = blas.sgemm(alpha=1.0, a=sigma, n=sigma, trans_b=True)
         del(sigma)
-        
+
         #outer = np.sqrt(outer)
-      
+
         cov /= outer
-        
+
         self.corr = cov
 
     def compute_total_conn(self):
         self._check_for_binary_corr()
-    
+
         np.fill_diagonal(self.corr_binary, 0)# zero the diagonal
         coefs = np.zeros(self.corr_binary.shape[0], np.float32)
-        
+
         for i in range(self.corr_binary.shape[0]):
             row = self.corr_binary[i,:]
             sub_conn_ind = np.nonzero(row)[0]
-            
+
             #build array or cols ( same as rows )
             cols = self.corr_binary[:, sub_conn_ind]
-            
+
             #find connections bw components with dot prod
-            coefs[i] = row.dot(cols).sum()   
-        
+            coefs[i] = row.dot(cols).sum()
+
         new = np.zeros(self.roi_shape[0:3], dtype=np.float32)
         new[self.ind] = coefs
         imagetools.save_new_image(new, self.tot_conn_path, self.rs_coordmap, log_this=True)
-        
+
     def compute_local_cluster_coef(self, thres=2):
         '''http://en.wikipedia.org/wiki/Clustering_coefficient'''
         if not path.exists(self.tot_conn_path):
             self.compute_total_conn()
-            
+
         self._check_for_binary_corr()
-        
+
         np.fill_diagonal(self.corr_binary, 0)# zero the diagonal
         deg = self.corr_binary.sum(axis=1)
         deg[deg < thres] = 1e4
         denom = deg * (deg -1)
-        
-        tot_conn_roi,_,_,_ = imagetools.get_roi(self.tot_conn_path, self.rs_mask_path)       
+
+        tot_conn_roi,_,_,_ = imagetools.get_roi(self.tot_conn_path, self.rs_mask_path)
         tot_conn_roi /= denom
-        
+
         new = np.zeros(self.roi_shape[0:3], dtype=np.float32)
         new[self.ind] = tot_conn_roi
         imagetools.save_new_image(new, self.local_clus_coef_path, self.rs_coordmap, log_this=True)
-            
+
         return new
 
     def load_corr_matrix(self):
         self.corr = np.load(self.corr_path)
 
-    def pvalue_ideas(self):    
+    def pvalue_ideas(self):
         tri = np.tril(self.corr)
         #del(corr)
         half = tri[tri != 0]
-        
+
         if half.size > 2e6:
             samp_size = 2e5
-            
+
             ran_obj = np.random
             ran_obj.set_state(self.state)
-            
+
             samp = np.zeros((5, samp_size), dtype=np.float32)
-            
+
             #sample with replacement
             for i in range(5):
                 ind = ran_obj.random_integers(0, half.size, samp_size)
                 samp[i] = half[ind]
-            
+
             del(half)
-         
+
             enn = empirical_pvalue.NormalEmpiricalNull(samp.ravel())
             del(samp)
-                
+
         else:
             enn = empirical_pvalue.NormalEmpiricalNull(half)
-            
+
         enn.learn()
         #mu = enn.mu
         sigma = enn.sigma
-        
-        self.corr[self.corr < sigma] = 0       
-            
+
+        self.corr[self.corr < sigma] = 0
+
     def compute_deg_with_dist(self, corr_thres, dist_thres):
         self._check_for_corr()
         self._check_roi_mask_parameters()
-        
+
         world_dim = imagetools.get_pixdims(self.rs_path)[1:4]
         world_dim[2] = np.round(world_dim[2], decimals=1) # dim3 sometimes 4.99999
-        
+
         corr = self.corr.copy()
         del(self.corr) # for memory
-        
+
         corr[corr > corr_thres ] = 1 #TODO: p value sig testing ?
         corr[corr < 1 ] = 0
-        
+
         out = np.zeros(corr.shape[0], dtype=np.float64)
-        
+
         for i in range(corr.shape[0]):
             row = corr[i,:]
             pts = np.nonzero(row)[0] #ind of  non zero connections
             co_2 = np.squeeze(self._get_ijk(i))#starting location i,j,k
             points = self._get_ijk(pts)#make tuples of i,j,k coordinates target
             dists = self._get_dist(points, co_2, world_dim)
-        
+
             dists[dists < dist_thres] = 0
             dists[dists > 0] = 1
             out[i] = dists.sum()
-        
+
         new = np.zeros(self.roi_shape[0:3])
         new[self.ind] = out
-        
+
         basename = 'deg_dist_thres_%.2fth_%2.1fmm.nii.gz' %(corr_thres, dist_thres)
         outfile = path.join(self.root_dir, basename)
         imagetools.save_new_image(new, outfile, self.rs_coordmap, log_this=True)
@@ -961,76 +966,76 @@ class VoxelWiseAnalysis(object):
     def compute_deg_cont_thres(self, corr_thres_min=0.20, corr_thres_deg=0.7):
         self._check_for_corr()
         self._check_roi_mask_parameters()
-        
+
         world_dim = imagetools.get_pixdims(self.rs_path)[1:4]
         world_dim[2] = np.round(world_dim[2], decimals=1) # dim3 sometimes 4.99999
-        
+
         corr = self.corr.copy()
         corr[corr < corr_thres_min] = 0 # exp shows that below .30 is questionable for across brain
-        del(self.corr) #for safety, since self.corr is used else where 
-        
-        outfile = path.join(self.root_dir, 'deg_cont_thres_mm.nii.gz')    
-        
-        out = np.zeros(corr.shape[0], dtype=np.float64)   
-        
-        
+        del(self.corr) #for safety, since self.corr is used else where
+
+        outfile = path.join(self.root_dir, 'deg_cont_thres_mm.nii.gz')
+
+        out = np.zeros(corr.shape[0], dtype=np.float64)
+
+
         for i in range(corr.shape[0]):
             co_2 = np.squeeze(self._get_ijk(i))#starting location i,j,k
-            
+
             row = corr[i, :]
             ind = np.arange(corr.shape[0])
             points = self._get_ijk(ind)#make tuples of i,j,k coordinates target
-            
+
             dists = self._get_dist(points, co_2, world_dim)
             weight = (corr_thres_deg - corr_thres_min) / dists.max()
-            
+
             adj_corr = row * (dists * weight * row + 1)
-            
+
             adj_corr[adj_corr >= corr_thres_deg] = 1
             adj_corr[adj_corr < 1] = 0
-            
+
             out[i] = adj_corr.sum()
 
         new = np.zeros(self.roi_shape[0:3])
         new[self.ind] = out
-        
+
         imagetools.save_new_image(new, outfile, self.rs_coordmap, log_this=True)
 
     def compute_deg_with_multi_dist(self, A=200, corr_thres=0.30):
         self._check_for_corr()
         self._check_roi_mask_parameters()
-        
+
         world_dim = imagetools.get_pixdims(self.rs_path)[1:4]
         world_dim[2] = np.round(world_dim[2], decimals=1) # dim3 sometimes 4.99999
-                
+
         corr = self.corr.copy()
-        
+
         corr[corr >= 0.70 ] = 1
-        corr[corr < 1] = 0 
+        corr[corr < 1] = 0
         out = corr.sum(0)
-        
+
         corr = self.corr.copy()
-        del(self.corr) # for memory     
-           
+        del(self.corr) # for memory
+
         corr[corr >= 0.7] = 0
         corr[corr < corr_thres] = 0
-        
+
         m = A / 0.4
-        b = A - m * corr_thres       
-        
+        b = A - m * corr_thres
+
         for i in range(corr.shape[0]):
             co_2 = np.squeeze(self._get_ijk(i))#starting location i,j,k
-            
+
             row = corr[i, :]
             ind = np.nonzero(corr[i,:])[0]
             points = self._get_ijk(ind)#make tuples of i,j,k coordinates target
-            
+
             dists = self._get_dist(points, co_2, world_dim)
 
             dist_thres =  -m * row[ind] + b# dist thres computed for each corr value
             dists[dists < dist_thres] = 0
             out[i] += dists.sum()
-        
+
         new = np.zeros(self.roi_shape[0:3])
         new[self.ind] = out
         name =  'deg_0.70_cont_%fth_%fmm.nii.gz' %(corr_thres, A)
@@ -1039,50 +1044,50 @@ class VoxelWiseAnalysis(object):
 
     def _get_dist(self, points, co_2, dim):
         dist = np.zeros(points.shape[0], np.float32)
-       
+
         for i in range(points.shape[0]):
             co_1 = points[i,:]
             a = dim[0]
             b = dim[1]
             c = dim[2]
-            
+
             dist[i] = np.sqrt( a**2*(co_2[0]-co_1[0])**2 + b**2*(co_2[1]-co_1[1])**2 + c**2*(co_2[2]-co_1[2])**2 )
-          
+
         return dist
-    
+
     def _get_ijk(self, pts):
         if isinstance(pts, int):
             return (self.i_ind[pts], self.j_ind[pts], self.k_ind[pts])
         else:
-            n = len(pts)    
-        
+            n = len(pts)
+
         points = np.zeros((n,3))
-        
+
         for i in range(n):
             points[i,:] = (self.i_ind[pts[i]], self.j_ind[pts[i]], self.k_ind[pts[i]])
-         
+
         return points
-        
+
     def seed_analysis_from_ijk(self, i, j, k, *args):
         self._check_for_corr()
         self._check_roi_mask_parameters()
-        
+
         # get pixdim for i, j ,k
         row_num = np.where((self.i_ind==i) & (self.j_ind==j) & (self.k_ind==k))[0]
-        
+
         if row_num.shape[0] != 1:
             raise Exception("The i,j,k co ordinates do not lie within the brain.")
-        
+
         new = np.zeros(self.roi_shape[0:3], dtype=np.float32)
         new[self.ind] =  np.squeeze(self.corr[row_num,:])
         name = 'seed_corr_%i_%i_%i.nii.gz' %(i,j,k)
         imagetools.save_new_image(new, path.join(self.root_dir, name), self.rs_coordmap, log_this=True)
-        
-        return row_num        
+
+        return row_num
 
 
 class MotionAnalysis(object):
-    
+
     def __init__(self, root_dir, bold, brain_mask, gm,  f2f_motion_file):
         self.root_dir = root_dir
         self.bold = bold
@@ -1090,182 +1095,182 @@ class MotionAnalysis(object):
         self.gm = gm
         self.motion_file = f2f_motion_file
         self.motion_thres = 0.35
-            
+
     def calculate_trajectory_dpc(self):
         ''' motion file is from PyConn.Detrend. it is the frame to frame
-        motion and is 6 cols with a row for each time point. Or, it is a 
-        numpy array time x voxels''' 
+        motion and is 6 cols with a row for each time point. Or, it is a
+        numpy array time x voxels'''
         if isinstance(self.motion_file, str):
             motion = np.loadtxt(self.motion_file)
         elif isinstance(self.motion_file, np.ndarray):
             motion = self.motion_file
         else:
             raise TypeError("motion arg should be a txt file or a np array")
-              
+
         # vox dim in mm
         pixdims = imagetools.get_pixdims(self.brain_mask)[1:4]
-        
+
         mask_data = imagetools.load_image(self.brain_mask).get_data()
-        
+
         # distance map to closet vox outside mask
         distances = ndimage.distance_transform_edt(mask_data)
-        
+
         dist = np.where(distances == distances.max())
-        
+
         # max dist is worst case
         distx = dist[0].max()
         disty = dist[1].max()
         distz = dist[2].max()
-        
+
         #largest diameter in each axis
         dia = 2 * np.array((distx, disty, distz)) * pixdims
         dia = np.tile(dia, (motion.shape[0],1))
-        
+
         trans = motion[:,0:3]
-        rots = dia * motion[:,3:] 
-                 
+        rots = dia * motion[:,3:]
+
         trans_rms = np.sqrt(np.mean(trans**2, axis=1))
         rots_rms = np.sqrt(np.mean(rots**2, axis=1))
-             
+
         trajectory = trans_rms + rots_rms
-     
+
         return trajectory
-    
+
     def convert_spm_motion_to_vol2vol_file(self, rp_file):
-        
+
         orig = np.loadtxt(rp_file)
-        
+
         trans = orig[:, 0:3]
         rots = orig[:, 3:]
-        
+
         num_vols = orig.shape[0]
-        
-        mats = np.zeros((num_vols, 4, 4))    
-        
+
+        mats = np.zeros((num_vols, 4, 4))
+
         # put params back into Matrices
         for i in range(num_vols):
             mats[i, 3, :] = np.array((0 ,0, 0, 1))
             mats[i, 0:3, 3] = trans[i,:]
             # euler2mat( z,y,x)
-            mats[i, 0:3, 0:3] = nie.euler2mat(rots[i, 2], rots[i, 1], rots[i, 0])  
-        
+            mats[i, 0:3, 0:3] = nie.euler2mat(rots[i, 2], rots[i, 1], rots[i, 0])
+
         detrend = DetrendMovementNoise(root_dir=None, rs_4D_path=None, confound_cleaned_output=None, mask=None)
         detrend.data_dim = np.array((0, 0, 0, num_vols))
 
         delta_mat = detrend.compute_temp_der(mats)
-  
+
         rotx, roty, rotz  = detrend.get_rots(delta_mat)
- 
+
         trans = detrend.get_trans(delta_mat)
 
         return np.concatenate((trans, rotx, roty, rotz), axis=1)
 
     def get_rms_std_prime_per_vol(self):
         roi, _, _,_ = imagetools.get_roi(self.bold, self.brain_mask)
-        
+
         sig_prime = np.hstack(((0), np.diff(roi.std(0), axis=1)))
-        
+
         rms_sig_prime = np.sqrt(np.mean(sig_prime**2))
-        
+
         return rms_sig_prime
 
     def caluculate_trajectory_power(self):
         motion = np.loadtxt(self.motion_file, np.float16)
-        
+
         mot_dr = np.hstack(((0), np.diff(motion, axis=0)))
-                           
+
         traj = np.sqrt(np.mean((mot_dr[:,0:3]*0.5)**2, axis=1))
-                           
+
         traj += np.sqrt(np.mean(mot_dr[:,3:]**2, axis=1))
-        
+
         return traj
-    
+
     def main_dpc(self):
-        
+
         traj = self.calculate_trajectory_dpc()
-        # prune traj b/c of possible vol drop 
+        # prune traj b/c of possible vol drop
         num_vols = imagetools.get_dim(self.bold)[4]
-        
+
         drop = traj.size - num_vols
         if drop < 0:
             raise Exception("Something weird happened adjusting drop points for traj.")
-        
+
         traj = traj[drop:]
-        
+
         traj_copy = traj.copy()
-        
+
         _, sigma = sigtools.get_mean_signal_with_mask(self.bold, self.gm, True)
-        
+
         sigma -= sigma.mean()
         sigma /= sigma.std()
-        
+
         traj -= traj.mean()
         traj /= traj.std()
-        
+
         test = sigma * traj
-        
+
         ind = np.where((test < 0) & (traj_copy > self.motion_thres))[0]
-        
+
         ind_chunks = self._get_contiguous(ind)
         ind_chunks = self.join_chunks(ind_chunks)
-        
+
         bad_ind = []
         for tup in ind_chunks:
             if len(tup) > 2:
                 #tup = [tup[0-1] + 1] + [tup[0] - 1] + tup
                 bad_ind.append(tup)
-            
+
         bad_ind = np.array(imagetools.flatten(bad_ind))
         bad_ind = np.unique(bad_ind)
-        
+
         if not len: # empty return False
-            return None, traj_copy, test            
- 
+            return None, traj_copy, test
+
         else:
             return bad_ind, traj_copy, test
 
     def main_power_censor(self):
         #dvars = self.get_rms_std_prime_per_vol()[0]
-        
+
         traj = self.calculate_trajectory_power()
-        # prune traj b/c of possible vol drop 
+        # prune traj b/c of possible vol drop
         num_vols = imagetools.get_dim(self.bold)[4]
-        
+
         drop = traj.size - num_vols
         if drop < 0:
             raise Exception("Something weird happened adjusting drop points for traj.")
-        
+
         traj = traj[drop:]
-        
+
         traj_copy = traj.copy()
-    
+
         keep_ind = np.where(traj < 0.3)[0]
         toss_ind = np.where(traj > 0.3)[0]
-        
-        
-        cont_ind = self._get_contiguous(keep_ind)    
-        
+
+
+        cont_ind = self._get_contiguous(keep_ind)
+
         for chunk in cont_ind:
             if len(chunk) < 5:
-                toss_ind = np.hstack((toss_ind, chunk))     
-                
+                toss_ind = np.hstack((toss_ind, chunk))
+
         keep_ind = np.arange(traj.size)
         keep_ind = np.delete(keep_ind, toss_ind)
-        
-        cont_ind = self._get_contiguous(keep_ind)    
-        
+
+        cont_ind = self._get_contiguous(keep_ind)
+
         total_len = 0
         for  chunk in cont_ind:
             if len(chunk) >= 50:
                 total_len += len(chunk)
-        
-        if len(toss_ind) > 0: 
-            return toss_ind, traj_copy, None # this None is for consist with other main
-        
-        else:
-            return None, traj_copy, None            
 
-                          
+        if len(toss_ind) > 0:
+            return toss_ind, traj_copy, None # this None is for consist with other main
+
+        else:
+            return None, traj_copy, None
+
+
     def join_chunks(self, chunks):
         new_chunk = []
         for i in range(len(chunks)-1):
@@ -1273,83 +1278,83 @@ class MotionAnalysis(object):
             c2 = chunks[i+1][0]
             if c2 - c1 > 1 and c2 - c1 < 4:
                 new_chunk.append(chunks[i] + chunks[i+1])
-                
-        return new_chunk + chunks        
-                
-                            
+
+        return new_chunk + chunks
+
+
 
     def _get_der_trig(self, roi, Stat, extrema_type):
-        
+
         if Stat == 'std':
-            signal = np.std(roi, axis=0) 
-        
+            signal = np.std(roi, axis=0)
+
         elif Stat == 'mean':
-            signal = np.mean(roi, axis=0) 
-        
+            signal = np.mean(roi, axis=0)
+
         signal -= signal.mean()# this is just for humans
-        
+
         #signal = sigtools.low_pass_filter(signal, 0.1, 1/2.2, 2)
-         
+
         #signal_der1 = np.hstack( (0 , np.diff(signal)) )
         signal_der1 = sigtools.savitzky_golay(y=signal, window_size=3, order=1, deriv=1)
         signal_der2 = np.hstack( (0 , np.diff(signal_der1)) )
         #signal_der2 = sigtools.savitzky_golay(y=signal, window_size=5, order=2, deriv=2)
-        
+
         test = signal_der1[0:-1] * signal_der1[1:]
         test = np.insert(test, [0], 0)
         signal_trig = np.zeros_like(signal)
-        
+
         signal_der2 = sigtools.low_pass_filter(signal_der2, 0.1, 1/2.2, 2)
-        
-        if extrema_type == 'max': 
+
+        if extrema_type == 'max':
             maxima = np.where((test < 0) & (signal_der2 < 0))[0]
             signal_trig[maxima] = 1
-            
 
-        elif extrema_type == 'min': 
+
+        elif extrema_type == 'min':
             minima = np.where((test < 0) & (signal_der2 > 0))[0]
             signal_trig[minima] = 1
 
         return signal_trig, signal_der2
-        
+
     def correlate_traj_mean(self, traj, motion_div):
         '''For line fitting: use traj_bins as "x", and scipy.polyfit(traj_mu, sigma_mu)
         for the line. You can use "w=errors" for a weighted fit. '''
         roi, _,_,_ = imagetools.get_roi(self.bold, self.brain_mask)
         mu = roi.mean(0)
-        
+
         range_ = traj.max() - traj.min()
         num_bins = np.int16(np.round(range_ / motion_div, decimals=0)) #mm
         traj_bins = np.linspace(traj.min(), traj.max(), np.int8(num_bins))
-        
+
         new_ind = np.digitize(traj, traj_bins)
-        
+
         traj_mu = np.zeros(num_bins, np.float32)
         mean_mu = np.zeros(num_bins, np.float32)
         errors = np.zeros(num_bins, np.float32)
-        
+
         for i in range(num_bins):
             get_vals = lambda vec: vec[new_ind == i]
-            
+
             traj_mu[i] = np.mean(get_vals(traj))
-            
+
             mean_mu[i] = np.mean(get_vals(mu))
-            
+
             vals = get_vals(mu)
             errors[i] = np.std( vals[vals != 0], ddof=0 )
-        
+
         traj_mu[np.isnan(traj_mu)] = 0 # if no new_ind matched, a nan occurs, same as 0 for this
         mean_mu[np.isnan(mean_mu)] = 0
         errors[np.isnan(errors)] = 0
-        
+
         return traj_bins, traj_mu, mean_mu, errors
 
     def _get_contiguous(self, chunk):
         out = []
         for _, g in groupby(enumerate(chunk), lambda i_x:i_x[0]-i_x[1]):
             out.append( list(map(itemgetter(1), g)) )
-           
-        return out    
+
+        return out
 
 
 class NFFT_Interp(object):
@@ -1358,98 +1363,98 @@ class NFFT_Interp(object):
         self.fourD_file = fourD_file
         self.output = output
         self.bad_ind = bad_ind.astype(np.int16)# cheap insurance
-      
-        bw_tr = BandwidthTR('human', self.fourD_file)  
-        
+
+        bw_tr = BandwidthTR('human', self.fourD_file)
+
         self.f_low = bw_tr.f_lp
         self.f_upper = bw_tr.f_ub
         self.TR = bw_tr.TR
-    
+
     def main(self):
-        
-        roi, ind, shape, coord = imagetools.get_roi(self.fourD_file, self.mask)   
-        
+
+        roi, ind, shape, coord = imagetools.get_roi(self.fourD_file, self.mask)
+
         x = np.linspace(-0.5, 0.5, roi.shape[1])   # 'continuous' time/spatial domain; -0.5<x<+0.5
         nodes = np.delete(x, self.bad_ind)
-        
+
         M = nodes.size                   # number of nodes
         N =  M                    # number of Fourier coefficients
-        
+
         plan = NFFT(N, M)
         plan.x = nodes
         plan.precompute()
-        
+
         values = np.delete(roi, self.bad_ind, axis=1)
-        
+
         output = np.zeros_like(roi)
-        
+
         ### start loop over all time points here ###
         ### crude test ###
-        
+
         for i in range(roi.shape[0]):
-        
+
             plan.f = values[i,:]
-        
+
             f_hat = plan.adjoint()
-            
+
             half = f_hat.shape[0] / 2
-            
+
             if np.mod(f_hat.shape[0], 2.0) != 0:
                 pad = shape[3] - half - 1
-                
+
             else:
-                pad =  shape[3] - half    
-            
+                pad =  shape[3] - half
+
             f_hat = 2 * f_hat[half:]
-            
+
             # interpolation requires extra zeros
             # in this case they are places AFTER the data, not in
             # the middle
             f_hat = np.concatenate( (f_hat, np.zeros(pad)), axis=0)
-            
+
             F = np.fft.ifft(f_hat)
-            
+
             output[i,:] = F.real
-    
+
         ### output ###
         sig = np.std(output, keepdims=True, axis=1)
         sig[sig == 0] = 1
         output /= sig
-        
-        # for varying reasons, the ts come out backwards and 
+
+        # for varying reasons, the ts come out backwards and
         # shifted wrt to the np fft covention.
-        # this fixes it so no one hates on me        
+        # this fixes it so no one hates on me
         output = np.fliplr(output)
         output = np.fft.fftshift(output, axes=1)
-        
+
         new = np.zeros(shape)
         new[ind] = output
         imagetools.save_new_image(new, self.output, coord)
-             
+
 
 class GLM(object):
     def __init__(self, root_dir, infile, mask, design):
         self.root_dir = root_dir
         self.roi.T, self.ind, shape, self.coord = imagetools.get_roi(infile, mask)
-        self.glm = glm    
+        self.glm = glm
         self.design = design
-    
+
         self.new = np.zeros(shape[0:3])
-    
+
         self.residual_image = path.join(self.root_dir, 'glm_residual.nii.gz' )
-     
+
     def glm(self):
         self.model = self.glm(self.design)
         self.model.fit(self.roi)
-          
-    def z_stat(self, con):    
+
+    def z_stat(self, con):
         z = self.model.contrast(con).z_score()
-        
+
         return z
-     
+
     def make_residual_image(self):
-        mse = self.model.contrast(np.eye(self.design.shape[1])) 
-    
+        mse = self.model.contrast(np.eye(self.design.shape[1]))
+
         self.new[self.ind] = np.sqrt(mse)
         imagetools.save_new_image(self.new, self.residual_image, self.coord)
 
@@ -1461,35 +1466,35 @@ class ICA(object):
         self.file_list = sub_path_list
         self.output = output
         self.brain_mask = brain_mask
-        
+
     def _append_root_dir(self):
         inputs = []
-        
+
         for row in self.file_list:
             joined_path = path.join(self.root_dir, row[0], row[1])
             normed_path = path.normpath(joined_path)
-            inputs = np.hstack((inputs, normed_path))    
-            
-        return inputs    
-        
+            inputs = np.hstack((inputs, normed_path))
+
+        return inputs
+
     def main(self, n_comp=20, fwhm=0., threshold=None):
         inputs = self._append_root_dir()
-        
-        canica = CanICA(n_components=n_comp, 
+
+        canica = CanICA(n_components=n_comp,
                         smoothing_fwhm=fwhm,
-                        memory="nilearn_cache", 
+                        memory="nilearn_cache",
                         memory_level=5,
-                        threshold=threshold, 
-                        verbose=0, 
+                        threshold=threshold,
+                        verbose=0,
                         random_state=0,
                         mask=self.brain_mask
                         )
-         
+
         canica.fit(inputs)
- 
+
         components_img = canica.masker_.inverse_transform(canica.components_)
-    
-        components_img.to_filename(self.output)    
+
+        components_img.to_filename(self.output)
 
 
 class ReplaceWithNoise(object):
@@ -1498,37 +1503,37 @@ class ReplaceWithNoise(object):
         self.fourD_file = fourD_file
         self.output = output
         self.bad_ind = bad_ind
-    
+
     def _load_data(self):
-        self.roi, self.ind, self.shape, self.coord = imagetools.get_roi(self.fourD_file, self.mask) 
+        self.roi, self.ind, self.shape, self.coord = imagetools.get_roi(self.fourD_file, self.mask)
 
     def process_roi(self):
-        
+
         beg_contig, end_contig = get_contiguous_regions(self.bad_ind) # class method
-                    
+
         seg_starts = self.bad_ind[beg_contig]
         seg_ends = self.bad_ind[end_contig]
 
         n = len(seg_starts)
-        
+
         for i in range(n):
             num = seg_ends[i] - seg_starts[i] + 1
-            noise =  np.random.randn(self.roi.shape[0], num) 
+            noise =  np.random.randn(self.roi.shape[0], num)
             noise /= noise.std(keepdims=True, axis=1)
             self.roi[:,seg_starts[i]:seg_ends[i]+1] = noise
 
     def main(self):
         self._load_data()
         self.process_roi()
-            
+
         new = np.zeros(self.shape)
         new[self.ind] = self.roi
-        imagetools.save_new_image(new, self.output, self.coord)    
-            
+        imagetools.save_new_image(new, self.output, self.coord)
+
 
 def save_roi_dict(root_dir, roi_dict):
         f = open(path.join(root_dir, 'roi_dict.json'), 'w')
-        json.dump(roi_dict, f)  
+        json.dump(roi_dict, f)
         f.close()
 
 def generate_roi_name_to_index_map(root_dir, parc_path):
@@ -1536,53 +1541,53 @@ def generate_roi_name_to_index_map(root_dir, parc_path):
         the label in the parc file, and the array index, of the
         roi_names array. The roi averages are computed in a loop
         based on the roi_names array order. '''
-        
+
         # bug in np.loadtxt won't allow unpack to diff dtypes; converters doesn't work either
-        labels, names = np.loadtxt(static_paths.roi_names, dtype=str, unpack=True) 
+        labels, names = np.loadtxt(static_paths.roi_names, dtype=str, unpack=True)
         labels = np.array(labels, dtype=int)
-        
+
         # delete any roi names, labels that we don't want to include
-        ind = np.where( labels == 0)[0]         
-        names = np.delete(names, ind)   
-             
-        # what we really need for ease of programming, is a map of the roi string name, 
-        # to the index that stores the numeric label. 
-        
+        ind = np.where( labels == 0)[0]
+        names = np.delete(names, ind)
+
+        # what we really need for ease of programming, is a map of the roi string name,
+        # to the index that stores the numeric label.
+
         # make roi string name to index map ( from roi_labels )
         roi_dict = {}
         for index, name in enumerate(names):
             roi_dict[name] = {'index':index, 'label':labels[index]}
-        
+
         save_roi_dict(root_dir, roi_dict)
 
 def load_roi_dict(roi_dict_path):
     f = open(roi_dict_path)
     roi_dict = json.load(f)
     f.close()
-    
+
     return roi_dict
-        
+
 def roi_dict_index_lookup(roi_dict, index):
 
     for k,v  in roi_dict.items():
         if v['index'] == index:
             return k
-    
-    return None    
-        
+
+    return None
+
 def get_contiguous_regions(orig_bad_ind):
     '''Only works if the indicies have at least two monotonically incr values. '''
     bad_ind = np.hstack((orig_bad_ind, np.int16(1e3)))
-    beg_contig = []   
+    beg_contig = []
     end_contig = []
-    
+
     j = 0
     i = 0
     while j < bad_ind.size - 2: #2 b/c we added a dummy
-        
+
         if bad_ind[i+1] == bad_ind[i] + 1:
             beg_contig.append(i)
-        
+
             for j in range(i+1, bad_ind.size - 1):
                 if bad_ind[j+1] != bad_ind[j] + 1:
                     end_contig.append(j) # plus 1 is b/c  non-inclusive
@@ -1592,34 +1597,34 @@ def get_contiguous_regions(orig_bad_ind):
             i += 1
 
     return beg_contig, end_contig
- 
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
